@@ -10,7 +10,7 @@ export class MqttService {
   private client: mqtt.MqttClient;
   private io: Server;
   private subscribedTopics: Set<string> = new Set(); // Almacena topics suscritos
-
+  private topicSubscribers: Map<string, number> = new Map(); // Almacena el número de suscriptor
 
   constructor(
     @InjectRepository(Topic) 
@@ -44,6 +44,42 @@ export class MqttService {
 
   setSocketServer(io: Server) {
     this.io = io;
+
+   // Escuchar cuando un cliente se une a una sala (tópico)
+    io.on('connection', (socket) => {
+      // Enviar el estado inicial de los suscriptores al nuevo cliente
+      const initialSubscriberCounts = {};
+      this.topicSubscribers.forEach((count, topic) => {
+        initialSubscriberCounts[topic] = count;
+      });
+      socket.emit('initial_subscriber_counts', initialSubscriberCounts);
+
+      socket.on('subscribe', (topic: string) => {
+        socket.join(topic); // Unir al cliente a la sala del tópico
+        console.log(`Cliente ${socket.id} se suscribió a ${topic}`);
+
+        // Actualizar el número de suscriptores
+        const subscriberCount = this.topicSubscribers.get(topic) || 0;
+        this.topicSubscribers.set(topic, subscriberCount + 1);
+
+        // Emitir el número actualizado de suscriptores
+        this.io.emit('subscriber_count', { topic, count: subscriberCount + 1 });
+      });
+
+      socket.on('unsubscribe', (topic: string) => {
+        socket.leave(topic); // Sacar al cliente de la sala del tópico
+        console.log(`Cliente ${socket.id} se desuscribió de ${topic}`);
+
+        // Actualizar el número de suscriptores
+        const subscriberCount = this.topicSubscribers.get(topic) || 0;
+        if (subscriberCount > 0) {
+          this.topicSubscribers.set(topic, subscriberCount - 1);
+        }
+
+        // Emitir el número actualizado de suscriptores
+        this.io.emit('subscriber_count', { topic, count: subscriberCount - 1 });
+      });
+    });
   }
 
   // Publicar un mensaje en un topic

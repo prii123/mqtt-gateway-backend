@@ -6,4 +6,7 @@ import { BaseEntity } from '../../config/base.entity';
 export class Topic extends BaseEntity implements ITopic {
   @Column({ unique: true })
   name: string;
+
+  @Column({ type: 'int', default: 0 })
+  subscriptionCount: number; // Número de suscriptores actuales al tópico
 }
