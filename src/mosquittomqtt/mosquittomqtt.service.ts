@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as mqtt from 'mqtt';
 import { Server } from 'socket.io';
-import { Topic } from './entities/mqtt.entity';
+import { Publisher, PublisherDocument, Topic, TopicDocument } from './entities/mqtt.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 
 @Injectable()
 export class MqttService {
@@ -13,8 +15,8 @@ export class MqttService {
   private topicSubscribers: Map<string, number> = new Map(); // Almacena el número de suscriptor
 
   constructor(
-    @InjectRepository(Topic) 
-    private readonly topicRepository: Repository<Topic>,
+    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
+    @InjectModel(Publisher.name) private publisherModel: Model<PublisherDocument>
   ) {
     
     this.client = mqtt.connect('mqtt://localhost'); // Conexión a Mosquitto
@@ -22,24 +24,62 @@ export class MqttService {
     this.client.on('connect', async () => {
       console.log('Conectado a Mosquitto');
       // Recuperar topics desde la base de datos al iniciar el servidor
-      const topics = await this.topicRepository.find();
-      topics.forEach((t) => this.client.subscribe(t.name));
+      const topics = await this.topicModel.find();
+      topics.forEach((t) => {
+        this.client.subscribe(t.name, (err) => {
+          if (err) {
+            console.error(`❌ Error al suscribirse a ${t.name}:`, err);
+          } else {
+            console.log(`✅ Suscrito a ${t.name}`);
+          }
+        });
+      });
+    });
+
+    this.client.on('message', async (topic, message) => {
+      console.log(topic + message)
+      const pus =  this.updatePublisher(topic, message.toString());
+      // console.log(`Mensaje recibido en ${ pus }`);
     });
 
     this.client.on('message', (topic, message) => {
-      console.log(`Mensaje recibido en ${topic}: ${message.toString()}`);
-    });
-
-    this.client.on('message', (topic, message) => {
+      // console.log({ topic, message: message })
     // Emitir mensaje a todos los clientes WebSocket
       if (this.io) {
         this.io.emit('mqtt_message', { topic, message: message });
       }
     });
 
+    this.client.on('error', (err) => {
+      console.error('❌ Error en MQTT:', err);
+    });
+    
+    this.client.on('offline', () => {
+      console.warn('⚠️ Cliente MQTT desconectado');
+    });
+    
+    this.client.on('reconnect', () => {
+      console.log('♻️ Intentando reconectar a MQTT...');
+    });
+    
+
 
     
 
+  }
+
+  async updatePublisher(topic: string, message: string): Promise<void> {
+    await this.publisherModel.updateOne(
+      { topic }, // Encuentra el documento por topic
+      { $set: { lastMessage: message } }, // Actualiza el mensaje
+      { upsert: true } // Si no existe, lo crea
+    );
+  }
+
+  async getLastMessages(): Promise<Publisher[]> {
+    return this.publisherModel.find({
+      order: { updatedAt: 'DESC' }, // Ordenar por fecha de actualización
+    });
   }
 
   setSocketServer(io: Server) {
@@ -82,38 +122,39 @@ export class MqttService {
     });
   }
 
-  // Publicar un mensaje en un topic
-  publish(topic: string, message: string) {
-    this.client.publish(topic, message);
-  }
+ // Publicar un mensaje en un topic
+ publish(topic: string, message: string) {
+  this.client.publish(topic, message);
+}
 
-  // Suscribirse a un topic
-  async subscribe(topic: string) {
-    this.client.subscribe(topic, async (err) => {
-      if (!err) {
-        console.log(`✅ Suscrito a ${topic}`);
-        const existingTopic = await this.topicRepository.findOneBy({ name: topic });
-        if (!existingTopic) {
-          await this.topicRepository.save({ name: topic });
-        }
+// Suscribirse a un topic
+async subscribe(topic: string) {
+  this.client.subscribe(topic, async (err) => {
+    if (!err) {
+      console.log(`✅ Suscrito a ${topic}`);
+      const existingTopic = await this.topicModel.findOne({ name: topic }).exec();
+      if (!existingTopic) {
+        await this.topicModel.create({ name: topic });
       }
-    });
-  }
+    }
+  });
+}
 
-  // Desuscribirse de un topic
-  async unsubscribe(topic: string) {
-    this.client.unsubscribe(topic, async (err) => {
-      if (!err) {
-        console.log(`❌ Desuscrito de ${topic}`);
-        await this.topicRepository.delete({ name: topic });
-      }
-    });
-  }
+// Desuscribirse de un topic
+async unsubscribe(topic: string) {
+  this.client.unsubscribe(topic, async (err) => {
+    if (!err) {
+      console.log(`❌ Desuscrito de ${topic}`);
+      await this.topicModel.deleteOne({ name: topic }).exec();
+    }
+  });
+}
 
-  async getSubscribedTopics(): Promise<string[]> {
-    const topics = await this.topicRepository.find();
-    return topics.map((t) => t.name);
-  }
+// Obtener todos los topics suscritos
+async getSubscribedTopics(): Promise<string[]> {
+  const topics = await this.topicModel.find().exec();
+  return topics.map((t) => t.name);
+}
 
 }
 

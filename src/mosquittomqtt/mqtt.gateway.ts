@@ -1,9 +1,10 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { MqttService } from './mosquittomqtt.service';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Topic } from './entities/mqtt.entity';
+import { Topic, TopicDocument } from './entities/mqtt.entity';
+import { Model } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+
 
 @WebSocketGateway({ cors: true })
 export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -11,8 +12,7 @@ export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   constructor(
     private readonly mqttService: MqttService,
-    @InjectRepository(Topic)
-    private readonly topicRepository: Repository<Topic>,
+    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
   ) {}
 
 
@@ -23,8 +23,6 @@ export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   handleConnection(client: Socket) {
     console.log(`✅ Cliente conectado: ${client.id}`);
-    console.log('Dirección IP:', client.handshake.address);
-    // console.log('Headers:', client.handshake.headers);
   }
 
   handleDisconnect(client: Socket) {
@@ -40,6 +38,23 @@ export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
      });
   }
 
+
+
+  @SubscribeMessage('publish')
+  async handlePublish(client: Socket, payload: { topic: string; message: string }) {
+    const { topic, message } = payload;
+    const ipAddress = client.handshake.address;
+
+    console.log(payload)
+
+    // // Actualizar la base de datos con el último mensaje publicado
+    // await this.mqttService.updatePublisher(topic, ipAddress, message);
+
+    // // Emitir el mensaje a todos los suscriptores del tópico
+    // this.server.to(topic).emit('message', { topic, message });
+
+    // console.log(`📤 Mensaje publicado en ${topic} por ${ipAddress}: ${message}`);
+  }
 
 
   @SubscribeMessage('subscribe')
@@ -87,15 +102,15 @@ export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   // Método para actualizar el contador de suscripciones en la base de datos
   private async updateTopicSubscriptionCount(topicName: string, change: number): Promise<void> {
-    const topic = await this.topicRepository.findOne({ where: { name: topicName } });
+    const topic = await this.topicModel.findOne({ where: { name: topicName } });
 
     if (topic) {
       topic.subscriptionCount += change;
-      await this.topicRepository.save(topic);
+      await this.topicModel.create({name: topicName});
     } else if (change > 0) {
       // Si el tópico no existe y es una suscripción, crea un nuevo registro
-      const newTopic = this.topicRepository.create({ name: topicName, subscriptionCount: 1 });
-      await this.topicRepository.save(newTopic);
+      const newTopic = await this.topicModel.updateOne({ name: topicName, subscriptionCount: 1 });
+      console.log(newTopic)
     }
   }
 

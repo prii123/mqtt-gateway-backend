@@ -2,11 +2,13 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MosquittomqttModule } from './mosquittomqtt/mosquittomqtt.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSourceConfig } from './config/data.source';
+import { MongooseModule } from '@nestjs/mongoose';
 
 @Module({
-  imports: [ TypeOrmModule.forRoot({...DataSourceConfig}),MosquittomqttModule],
+  imports: [
+    MongooseModule.forRoot('mongodb://admin:password@localhost:27017/', {
+      dbName: 'mqtt_database',
+    }), MosquittomqttModule],
   controllers: [AppController],
   providers: [AppService],
 })
