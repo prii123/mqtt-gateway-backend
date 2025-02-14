@@ -1,3 +1,6 @@
+# 1. DESPLIEGUE POR PRIMERA VEZ
+
+Despliegue diseñado para servidores ubuntu con ssh
 # Terraform
 
 ```bash
@@ -40,7 +43,7 @@ resource "null_resource" "configuracion_droplet" {
 levanta el cliente y el servidor y una base de datos en mongo db
 
 ```bash
-version: '3.8'
+version: "3.8"
 
 services:
   backend:
@@ -51,7 +54,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongo:27017/mydatabase
+      - MONGO_URI=mongodb://mongo_user:mongo_password@mongo:27017/mydatabase?authSource=admin
     depends_on:
       - mongo
 
@@ -70,6 +73,9 @@ services:
   mongo:
     image: mongo:6
     restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
     ports:
       - "27017:27017"
     volumes:
@@ -81,3 +87,7 @@ volumes:
 
 ```
 
+
+# 2. DESPLIEGUE POR PRIMERA VEZ
+
+Actualizaciones
