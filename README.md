@@ -1,3 +1,43 @@
+# Terraform
+
+```bash
+
+resource "null_resource" "configuracion_droplet" {
+  provisioner "remote-exec" {
+    inline = [
+      # Deshabilitar la verificación interactiva de claves de host SSH
+      "echo 'Host github.com\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null' >> ~/.ssh/config",
+      "chmod 600 ~/.ssh/config",
+      "mkdir -p ~/mqttproyect",
+      "git clone git@github.com:prii123/iot-gateway-client.git /root/mqttproyect/frontend",
+      "git clone git@github.com:prii123/mqtt-gateway-backend.git /root/mqttproyect/backend",
+
+
+      # Navegar al directorio del proyecto
+      "cd /root/mqttproyect",
+
+      # Copiar el archivo docker-compose.yml desde local al droplet
+      "echo '${file("${path.module}/docker-compose.yml")}' > ~/mqttproyect/docker-compose.yml",
+
+      # Cambiar al directorio donde se encuentra el archivo docker-compose.yml
+      "cd ~/mqttproyect && docker-compose up -d",
+
+    ]
+  }
+
+ connection {
+    type        = "ssh"
+    user        = "root"
+    private_key = file("~/.ssh/id_rsa")
+    host        = "164.92.70.248"
+  }
+}
+
+```
+
+
+# docker-compose-yml
+levanta el cliente y el servidor y una base de datos en mongo db
 
 ```bash
 version: '3.8'
