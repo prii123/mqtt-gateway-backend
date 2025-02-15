@@ -24,12 +24,6 @@ export class MqttController {
     return { success: true };
   }
 
-  @Get('topics')
-  async getTopics() {
-    const topics = await this.mqttService.getSubscribedTopics();
-    return { topics };
-  }
-
   @Get('last-messages')
   async getLastMessages() {
     return this.mqttService.getLastMessages();

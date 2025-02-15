@@ -7,12 +7,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
+
+
 @Injectable()
 export class MqttService {
   private client: mqtt.MqttClient;
   private io: Server;
-  private subscribedTopics: Set<string> = new Set(); // Almacena topics suscritos
-  private topicSubscribers: Map<string, number> = new Map(); // Almacena el número de suscriptor
+
+  private messageBuffer: { topic: string; message: string; updatedAt: Date }[] = [];
+  private isProcessing = false;
 
   constructor(
     @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
@@ -23,30 +26,27 @@ export class MqttService {
 
     this.client.on('connect', async () => {
       console.log('Conectado a Mosquitto');
-      // Recuperar topics desde la base de datos al iniciar el servidor
-      const topics = await this.topicModel.find();
-      topics.forEach((t) => {
-        this.client.subscribe(t.name, (err) => {
-          if (err) {
-            console.error(`❌ Error al suscribirse a ${t.name}:`, err);
-          } else {
-            console.log(`✅ Suscrito a ${t.name}`);
-          }
-        });
+
+      // Suscribirse a todos los tópicos
+      this.client.subscribe('#', (err) => {
+        if (err) {
+          console.error('❌ Error al suscribirse a todos los tópicos:', err);
+        } else {
+          console.log('✅ Suscrito a todos los tópicos (#)');
+        }
       });
+
     });
 
+    
     this.client.on('message', async (topic, message) => {
-      console.log(topic + message)
-      const pus =  this.updatePublisher(topic, message.toString());
-      // console.log(`Mensaje recibido en ${ pus }`);
-    });
+      console.log(`📩 Mensaje recibido: ${topic} -> ${message.toString()}`);
+      
+      await this.updatePublisher(topic, message.toString());
 
-    this.client.on('message', (topic, message) => {
-      // console.log({ topic, message: message })
-    // Emitir mensaje a todos los clientes WebSocket
+      // Enviar mensaje por WebSocket
       if (this.io) {
-        this.io.emit('mqtt_message', { topic, message: message });
+        this.io.emit('mqtt_message', { topic, message: message.toString() });
       }
     });
 
@@ -62,64 +62,65 @@ export class MqttService {
       console.log('♻️ Intentando reconectar a MQTT...');
     });
     
-
-
-    
-
   }
+
+
+
 
   async updatePublisher(topic: string, message: string): Promise<void> {
-    await this.publisherModel.updateOne(
-      { topic }, // Encuentra el documento por topic
-      { $set: { lastMessage: message } }, // Actualiza el mensaje
-      { upsert: true } // Si no existe, lo crea
-    );
-  }
+    const timestamp = new Date(); // Generar la fecha justo antes de guardar en MongoDB
+    this.messageBuffer.push({ topic, message, updatedAt: timestamp });
 
-  async getLastMessages(): Promise<Publisher[]> {
-    return this.publisherModel.find({
-      order: { updatedAt: 'DESC' }, // Ordenar por fecha de actualización
-    });
-  }
+    if (!this.isProcessing) {
+        this.isProcessing = true;
+        setTimeout(async () => {
+            if (this.messageBuffer.length > 0) {
+                const bulkOps = this.messageBuffer.map((msg) => ({
+                    updateOne: {
+                        filter: { topic: msg.topic },
+                        update: { $set: { lastMessage: msg.message, updatedAt: msg.updatedAt } },
+                        upsert: true,
+                    },
+                }));
+
+                await this.publisherModel.bulkWrite(bulkOps);
+                console.log(`📌 Guardados ${bulkOps.length} mensajes en MongoDB`);
+
+                // Emitir actualización al frontend
+                this.messageBuffer.forEach((msg) => {
+                    this.io.emit("mqtt_message", {
+                        topic: msg.topic,
+                        lastMessage: msg.message,
+                        updatedAt: msg.updatedAt,
+                    });
+                });
+
+                this.messageBuffer = []; // Limpiar buffer después de actualizar
+            }
+            this.isProcessing = false;
+        }, 0);
+    }
+}
+
+
 
   setSocketServer(io: Server) {
     this.io = io;
 
    // Escuchar cuando un cliente se une a una sala (tópico)
-    io.on('connection', (socket) => {
-      // Enviar el estado inicial de los suscriptores al nuevo cliente
-      const initialSubscriberCounts = {};
-      this.topicSubscribers.forEach((count, topic) => {
-        initialSubscriberCounts[topic] = count;
-      });
-      socket.emit('initial_subscriber_counts', initialSubscriberCounts);
+    io.on('connection', async(socket) => {
 
-      socket.on('subscribe', (topic: string) => {
-        socket.join(topic); // Unir al cliente a la sala del tópico
-        console.log(`Cliente ${socket.id} se suscribió a ${topic}`);
-
-        // Actualizar el número de suscriptores
-        const subscriberCount = this.topicSubscribers.get(topic) || 0;
-        this.topicSubscribers.set(topic, subscriberCount + 1);
-
-        // Emitir el número actualizado de suscriptores
-        this.io.emit('subscriber_count', { topic, count: subscriberCount + 1 });
-      });
-
-      socket.on('unsubscribe', (topic: string) => {
-        socket.leave(topic); // Sacar al cliente de la sala del tópico
-        console.log(`Cliente ${socket.id} se desuscribió de ${topic}`);
-
-        // Actualizar el número de suscriptores
-        const subscriberCount = this.topicSubscribers.get(topic) || 0;
-        if (subscriberCount > 0) {
-          this.topicSubscribers.set(topic, subscriberCount - 1);
-        }
-
-        // Emitir el número actualizado de suscriptores
-        this.io.emit('subscriber_count', { topic, count: subscriberCount - 1 });
-      });
+      // Enviar últimos mensajes guardados en MongoDB al conectar
+      const lastMessages = await this.getLastMessages();
+      // console.log(lastMessages)
+      socket.emit('last_messages', lastMessages)
     });
+  }
+
+  async getLastMessages(): Promise<Publisher[]> {
+    return this.publisherModel.find()
+      .sort({ updatedAt: 1 }) // Ordenar en orden descendente
+      .exec(); // Ejecutar la consulta correctamente
   }
 
  // Publicar un mensaje en un topic
@@ -148,12 +149,6 @@ async unsubscribe(topic: string) {
       await this.topicModel.deleteOne({ name: topic }).exec();
     }
   });
-}
-
-// Obtener todos los topics suscritos
-async getSubscribedTopics(): Promise<string[]> {
-  const topics = await this.topicModel.find().exec();
-  return topics.map((t) => t.name);
 }
 
 }

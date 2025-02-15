@@ -53,6 +53,9 @@ export class Publisher {
 
   @Prop()
   lastMessage: string;
+
+  @Prop() // ✅ Agregar manualmente para que TypeScript lo reconozca
+  updatedAt: Date;
 }
 
 export const PublisherSchema = SchemaFactory.createForClass(Publisher);

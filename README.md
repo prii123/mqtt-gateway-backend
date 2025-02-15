@@ -1,3 +1,25 @@
+# Mosquitto
+```bash
+  sudo nano /etc/mosquitto/mosquitto.conf
+```
+
+```bash
+    listener 1883
+    allow_anonymous true
+
+    listener 9001
+    protocol websockets
+
+    log_type all
+    sys_interval 10  # Publica métricas cada 10 segundos
+
+```
+
+sudo systemctl restart mosquitto
+
+
+
+
 # 1. DESPLIEGUE POR PRIMERA VEZ
 
 Despliegue diseñado para servidores ubuntu con ssh
