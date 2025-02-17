@@ -113,3 +113,60 @@ volumes:
 # 2. DESPLIEGUE POR PRIMERA VEZ
 
 Actualizaciones
+
+
+# 3. EMQX
+https://docs.emqx.com/en/emqx/latest/deploy/install-ubuntu-ce.html
+
+https://mqttx.app/downloads
+
+```bash
+  sudo snap install emqx
+
+  sudo emqx start
+```
+```bash
+```
+1️⃣ Habilitar autenticación en EMQX
+Para ver el estado de la autenticación, ejecuta:
+```bash
+emqx ctl plugins list | grep emqx_auth
+```
+Si la autenticación no está habilitada, activa el plugin de autenticación simple:
+```bash
+emqx ctl plugins load emqx_auth_mnesia
+```
+
+2️⃣ Agregar un usuario con contraseña
+Ejecuta este comando para añadir un usuario:
+```bash
+emqx ctl authz add username=miusuario password=miclave
+```
+Si necesitas más usuarios, repite el comando con datos diferentes.
+
+3️⃣ Desactivar acceso anónimo
+Edita el archivo de configuración:
+```bash
+sudo nano /var/snap/emqx/common/emqx/etc/emqx.conf
+```
+
+Busca la línea:
+
+
+```bash
+allow_anonymous = true
+```
+
+Y cámbiala a:
+
+ini
+Copiar
+Editar
+allow_anonymous = false
+Guarda (CTRL + X, Y, Enter) y reinicia EMQX:
+
+bash
+Copiar
+Editar
+sudo snap restart emqx
+✅ Ahora solo los usuarios registrados podrán conectarse.

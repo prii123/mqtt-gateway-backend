@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as mqtt from 'mqtt';
 import { Server } from 'socket.io';
 import { Publisher, PublisherDocument, Topic, TopicDocument } from './entities/mqtt.entity';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InfluxDB, Point } from '@influxdata/influxdb-client';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
@@ -13,7 +12,8 @@ import { Model } from 'mongoose';
 export class MqttService {
   private client: mqtt.MqttClient;
   private io: Server;
-
+  private influxDB: InfluxDB;
+  private writeApi;
   private messageBuffer: { topic: string; message: string; updatedAt: Date }[] = [];
   private isProcessing = false;
 
@@ -21,6 +21,16 @@ export class MqttService {
     @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
     @InjectModel(Publisher.name) private publisherModel: Model<PublisherDocument>
   ) {
+
+      // Configuración de InfluxDB
+      const url = 'http://localhost:8086';
+      const token = '-CBADMlABSV7_Xkbz3lvtg1tQX-RoMPzc7N72wJPQVq0dB8Cz4ssg0QidY3OEHjI6R985Wmb5kj17hf_Ycju9Q==';
+      const org = 'iot';
+      const bucket = 'mqtt-messages';
+
+
+    this.influxDB = new InfluxDB({ url, token });
+    this.writeApi = this.influxDB.getWriteApi(org, bucket, 'ns');
     
     this.client = mqtt.connect('mqtt://localhost'); // Conexión a Mosquitto
 
@@ -75,17 +85,30 @@ export class MqttService {
         this.isProcessing = true;
         setTimeout(async () => {
             if (this.messageBuffer.length > 0) {
-                const bulkOps = this.messageBuffer.map((msg) => ({
-                    updateOne: {
-                        filter: { topic: msg.topic },
-                        update: { $set: { lastMessage: msg.message, updatedAt: msg.updatedAt } },
-                        upsert: true,
-                    },
-                }));
+                // const bulkOps = this.messageBuffer.map((msg) => ({
+                //     updateOne: {
+                //         filter: { topic: msg.topic },
+                //         update: { $set: { lastMessage: msg.message, updatedAt: msg.updatedAt } },
+                //         upsert: true,
+                //     },
+                // }));
 
-                await this.publisherModel.bulkWrite(bulkOps);
-                console.log(`📌 Guardados ${bulkOps.length} mensajes en MongoDB`);
+                // await this.publisherModel.bulkWrite(bulkOps);
+                // console.log(`📌 Guardados ${bulkOps.length} mensajes en MongoDB`);
 
+                for (const msg of this.messageBuffer) {
+                  const point = new Point('mqtt_messages')
+                      .tag('topic', msg.topic)
+                      .stringField('message', msg.message)
+                      .timestamp(msg.updatedAt);
+
+                  await this.writeApi.writePoint(point);
+              }
+
+              // await this.writeApi.close();
+              console.log(`📌 Guardados ${this.messageBuffer.length} mensajes en InfluxDB`);
+
+              // Emitir actualización al frontend
                 // Emitir actualización al frontend
                 this.messageBuffer.forEach((msg) => {
                     this.io.emit("mqtt_message", {
@@ -117,10 +140,16 @@ export class MqttService {
     });
   }
 
-  async getLastMessages(): Promise<Publisher[]> {
-    return this.publisherModel.find()
-      .sort({ updatedAt: 1 }) // Ordenar en orden descendente
-      .exec(); // Ejecutar la consulta correctamente
+  async getLastMessages() {
+    // return this.publisherModel.find()
+    //   .sort({ updatedAt: 1 }) // Ordenar en orden descendente
+    //   .exec(); // Ejecutar la consulta correctamente
+    const query = `from(bucket: "mqtt-messages")
+                    |> range(start: -1h)
+                    |> filter(fn: (r) => r["_measurement"] == "mqtt_messages")
+                    |> pivot(rowKey: ["_time"], columnKey: ["topic"], valueColumn: "_value")`;
+    const result = await this.influxDB.getQueryApi('iot').collectRows(query);
+    return result;
   }
 
  // Publicar un mensaje en un topic
