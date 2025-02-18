@@ -24,9 +24,9 @@ export class MqttService {
 
       // Configuración de InfluxDB
       const url = 'http://localhost:8086';
-      const token = '-CBADMlABSV7_Xkbz3lvtg1tQX-RoMPzc7N72wJPQVq0dB8Cz4ssg0QidY3OEHjI6R985Wmb5kj17hf_Ycju9Q==';
+      const token = '4644a83e169462863f45b61527b5a7a89c9211e3e218bf734eacbf55407e7e76';
       const org = 'iot';
-      const bucket = 'mqtt-messages';
+      const bucket = 'sensores';
 
 
     this.influxDB = new InfluxDB({ url, token });
@@ -97,7 +97,7 @@ export class MqttService {
                 // console.log(`📌 Guardados ${bulkOps.length} mensajes en MongoDB`);
 
                 for (const msg of this.messageBuffer) {
-                  const point = new Point('mqtt_messages')
+                  const point = new Point('sensores')
                       .tag('topic', msg.topic)
                       .stringField('message', msg.message)
                       .timestamp(msg.updatedAt);
@@ -144,9 +144,9 @@ export class MqttService {
     // return this.publisherModel.find()
     //   .sort({ updatedAt: 1 }) // Ordenar en orden descendente
     //   .exec(); // Ejecutar la consulta correctamente
-    const query = `from(bucket: "mqtt-messages")
+    const query = `from(bucket: "sensores")
                     |> range(start: -1h)
-                    |> filter(fn: (r) => r["_measurement"] == "mqtt_messages")
+                    |> filter(fn: (r) => r["_measurement"] == "sensores")
                     |> pivot(rowKey: ["_time"], columnKey: ["topic"], valueColumn: "_value")`;
     const result = await this.influxDB.getQueryApi('iot').collectRows(query);
     return result;
