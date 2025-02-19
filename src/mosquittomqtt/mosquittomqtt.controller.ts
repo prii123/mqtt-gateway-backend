@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Put } from '@nestjs/common';
 import { MqttService } from './mosquittomqtt.service';
 
 
 @Controller('mqtt')
 export class MqttController {
-  constructor(private readonly mqttService: MqttService) {}
+  constructor(
+    private readonly mqttService: MqttService
+  ) {}
 
   @Post('publish')
   publish(@Body() data: { topic: string; message: string }) {
@@ -12,20 +14,28 @@ export class MqttController {
     return { success: true };
   }
 
-  @Post('subscribe')
-  async subscribe(@Body() data: { topic: string }) {
-    await this.mqttService.subscribe(data.topic);
-    return { success: true, topic: data.topic };
-  }
-
-  @Post('unsubscribe')
-  async unsubscribe(@Body() data: { topic: string }) {
-    await this.mqttService.unsubscribe(data.topic);
-    return { success: true };
-  }
-
   @Get('last-messages')
   async getLastMessages() {
     return this.mqttService.getLastMessages();
   }
+
+
+  @Get('topic/:name')
+  getTopic(@Param('name') name: string) {
+    return this.mqttService.getOrCreateTopic(name);
+  }
+
+  @Post("topic")
+  createTopic(@Body() createTopicDto) {
+    return this.mqttService.createTopic(createTopicDto);
+  }
+
+  @Put('topic/:name')
+  updateTopic(@Param('name') name: string, @Body() updateDto) {
+    return this.mqttService.updateTopic(name, updateDto);
+  }
+
+
+
+
 }

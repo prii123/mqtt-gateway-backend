@@ -1,7 +1,7 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { MqttService } from './mosquittomqtt.service';
-import { Topic, TopicDocument } from './entities/mqtt.entity';
+import { Topic } from './entities/mqtt.entity';
 import { Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 
@@ -12,7 +12,7 @@ export class MqttGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   constructor(
     private readonly mqttService: MqttService,
-    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
+    @InjectModel(Topic.name) private topicModel: Model<Topic>,
   ) {}
 
 

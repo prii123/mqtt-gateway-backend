@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as mqtt from 'mqtt';
 import { Server } from 'socket.io';
-import { Publisher, PublisherDocument, Topic, TopicDocument } from './entities/mqtt.entity';
+import { Publisher, PublisherDocument, Topic } from './entities/mqtt.entity';
 import { InfluxDB, Point } from '@influxdata/influxdb-client';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -18,7 +18,7 @@ export class MqttService {
   private isProcessing = false;
 
   constructor(
-    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
+    @InjectModel(Topic.name) private topicModel: Model<Topic>,
     @InjectModel(Publisher.name) private publisherModel: Model<PublisherDocument>
   ) {
 
@@ -50,7 +50,7 @@ export class MqttService {
 
     
     this.client.on('message', async (topic, message) => {
-      console.log(`📩 Mensaje recibido: ${topic} -> ${message.toString()}`);
+      // console.log(`📩 Mensaje recibido: ${topic} -> ${message.toString()}`);
       
       await this.updatePublisher(topic, message.toString());
 
@@ -85,17 +85,6 @@ export class MqttService {
         this.isProcessing = true;
         setTimeout(async () => {
             if (this.messageBuffer.length > 0) {
-                // const bulkOps = this.messageBuffer.map((msg) => ({
-                //     updateOne: {
-                //         filter: { topic: msg.topic },
-                //         update: { $set: { lastMessage: msg.message, updatedAt: msg.updatedAt } },
-                //         upsert: true,
-                //     },
-                // }));
-
-                // await this.publisherModel.bulkWrite(bulkOps);
-                // console.log(`📌 Guardados ${bulkOps.length} mensajes en MongoDB`);
-
                 for (const msg of this.messageBuffer) {
                   const point = new Point('sensores')
                       .tag('topic', msg.topic)
@@ -106,10 +95,8 @@ export class MqttService {
               }
 
               // await this.writeApi.close();
-              console.log(`📌 Guardados ${this.messageBuffer.length} mensajes en InfluxDB`);
+              // console.log(`📌 Guardados ${this.messageBuffer.length} mensajes en InfluxDB`);
 
-              // Emitir actualización al frontend
-                // Emitir actualización al frontend
                 this.messageBuffer.forEach((msg) => {
                     this.io.emit("mqtt_message", {
                         topic: msg.topic,
@@ -157,27 +144,46 @@ export class MqttService {
   this.client.publish(topic, message);
 }
 
-// Suscribirse a un topic
-async subscribe(topic: string) {
-  this.client.subscribe(topic, async (err) => {
-    if (!err) {
-      console.log(`✅ Suscrito a ${topic}`);
-      const existingTopic = await this.topicModel.findOne({ name: topic }).exec();
-      if (!existingTopic) {
-        await this.topicModel.create({ name: topic });
-      }
-    }
-  });
-}
+// // Suscribirse a un topic
+// async subscribe(topic: string) {
+//   this.client.subscribe(topic, async (err) => {
+//     if (!err) {
+//       console.log(`✅ Suscrito a ${topic}`);
+//       const existingTopic = await this.topicModel.findOne({ name: topic }).exec();
+//       if (!existingTopic) {
+//         await this.topicModel.create({ name: topic });
+//       }
+//     }
+//   });
+// }
 
 // Desuscribirse de un topic
-async unsubscribe(topic: string) {
-  this.client.unsubscribe(topic, async (err) => {
-    if (!err) {
-      console.log(`❌ Desuscrito de ${topic}`);
-      await this.topicModel.deleteOne({ name: topic }).exec();
-    }
-  });
+// async unsubscribe(topic: string) {
+//   this.client.unsubscribe(topic, async (err) => {
+//     if (!err) {
+//       console.log(`❌ Desuscrito de ${topic}`);
+//       await this.topicModel.deleteOne({ name: topic }).exec();
+//     }
+//   });
+// }
+
+
+async getOrCreateTopic(name: string) {
+  let topic = await this.topicModel.findOne({ name }).exec();
+  if (!topic) {
+    topic = new this.topicModel({ name, type: 'sensor', expectedValues: [], actions: [], unit: '' });
+    await topic.save();
+  }
+  return topic;
+}
+
+async createTopic(createDto) {
+  const topic = new this.topicModel(createDto);
+  return topic.save();
+}
+
+async updateTopic(name: string, updateDto) {
+  return this.topicModel.findOneAndUpdate({ name }, updateDto, { new: true });
 }
 
 }
