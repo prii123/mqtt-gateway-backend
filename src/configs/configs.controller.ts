@@ -18,6 +18,7 @@ export class ConfigsController {
 
   @Get("wificonf")
   findAll() {
+    console.log("pidio clave y wifi")
     return this.configsService.findAll();
   }
 

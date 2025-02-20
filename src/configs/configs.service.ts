@@ -30,8 +30,10 @@ export class ConfigsService {
   }
 
   async findAll() {
-    return await this.wifiPassModel.find();
+    const lastWifi = await this.wifiPassModel.findOne().sort({ createdAt: -1 });
+    return lastWifi ? { ssid: lastWifi.wifi, password: lastWifi.pass } : {};
   }
+  
 
 
 }
