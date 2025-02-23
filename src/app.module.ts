@@ -7,7 +7,7 @@ import { ConfigsModule } from './configs/configs.module';
 
 @Module({
   imports: [
-    MongooseModule.forRoot('mongodb://admin:password@localhost:27017/', {
+    MongooseModule.forRoot('mongodb://admin:password@192.168.78.106:27017/', {
       dbName: 'mqtt_database',
     }), MosquittomqttModule, ConfigsModule],
   controllers: [AppController],
